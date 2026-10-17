@@ -15,90 +15,115 @@
         input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
         .status { margin-top: 10px; font-size: 14px; color: #f59e0b; }
         .small-note { margin-top: 10px; color: #cbd5e1; font-size: 12px; }
+        .row { display:flex; gap:10px; }
     </style>
 </head>
 <body>
 
 <div class="card" id="loginCard">
-    <h2>تسجيل الدخول</h2>
+    <h2>تسجيل الدخول / إنشاء حساب</h2>
     <input type="email" id="emailInput" placeholder="أدخل بريدك الإلكتروني">
     <input type="password" id="passwordInput" placeholder="أدخل كلمة المرور">
-    <button class="btn" id="loginBtn" onclick="loginUser()">دخول / تسجيل</button>
+    <div class="row">
+      <button class="btn" id="signUpBtn" onclick="signUp()">إنشاء حساب</button>
+      <button class="btn" id="signInBtn" onclick="signIn()">تسجيل دخول</button>
+    </div>
     <div class="status" id="loginStatus"></div>
-    <div class="small-note">ملاحظة: هذه نسخة تجريبية، وتحتاج إلى ربطها بـ Supabase وملء بيانات المشروع.</div>
+    <div class="small-note">ملاحظة: تم تعديل التطبيق لاستخدام Supabase Auth وملف Profiles منفصل لتخزين الرصيد.</div>
 </div>
 
 <div class="card" id="appCard" style="display:none;">
     <h2>رصيدك الحالي</h2>
     <div class="balance-box" id="balanceDisplay">$0.00</div>
     <button class="btn" id="runBtn" onclick="runMining()">تشغيل التعدين (+3%)</button>
+    <button class="btn" id="logoutBtn" style="margin-top:10px; background:#ef4444;">تسجيل خروج</button>
     <div class="timer" id="timerDisplay"></div>
 </div>
 
 <script>
-    // استبدل هاتين القيمتين ببيانات مشروعك من Supabase
+    // تم إدخال بيانات المشروع من قبلك
     const SUPABASE_URL = 'https://hdokwptxeveharhqfesx.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_KdsOTT-M5gzFCdrJ5iBhfw_rkAP4098';
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    let currentUserEmail = '';
+    let currentUser = null; // object from supabase.auth
 
-    async function loginUser() {
-        const emailInput = document.getElementById('emailInput').value.trim();
-        const passwordInput = document.getElementById('passwordInput').value.trim();
-        const statusDiv = document.getElementById('loginStatus');
-        const loginBtn = document.getElementById('loginBtn');
+    // Helpers
+    function showStatus(msg) { document.getElementById('loginStatus').innerText = msg || ''; }
 
-        if (!emailInput || !passwordInput) {
-            alert('الرجاء إدخال البريد الإلكتروني وكلمة المرور');
-            return;
-        }
-
-        loginBtn.disabled = true;
-        statusDiv.innerText = 'جاري تسجيل الدخول...';
-
+    async function signUp() {
+        const email = document.getElementById('emailInput').value.trim();
+        const password = document.getElementById('passwordInput').value.trim();
+        if (!email || !password) { alert('الرجاء إدخال البريد الإلكتروني وكلمة المرور'); return; }
+        showStatus('جاري إنشاء الحساب...');
         try {
-            let { data, error } = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', emailInput)
-                .eq('password', passwordInput)
-                .maybeSingle();
-
+            const { data, error } = await supabase.auth.signUp({ email, password });
             if (error) throw error;
-
-            if (!data) {
-                let { data: newData, error: insertError } = await supabase
-                    .from('users')
-                    .insert([{ email: emailInput, password: passwordInput, balance: 0, last_run: null }])
-                    .select()
-                    .single();
-
-                if (insertError) throw insertError;
-                data = newData;
-            }
-
-            currentUserEmail = data.email;
-            document.getElementById('loginCard').style.display = 'none';
-            document.getElementById('appCard').style.display = 'block';
-            updateUI(data);
-
+            // data.user may be returning null if email confirmation required; handle gracefully
+            currentUser = data.user || null;
+            // Ensure profile exists (if user id available). If not available, tell user to check email.
+            if (currentUser && currentUser.id) await ensureProfile(currentUser.id);
+            showStatus('تم إنشاء الحساب. إذا تطلب المشروع تأكيد البريد، تحقق من بريدك ثم سجّل الدخول.');
         } catch (err) {
-            alert('حدث خطأ أثناء الاتصال بقاعدة البيانات: ' + err.message);
-            statusDiv.innerText = '';
-            loginBtn.disabled = false;
+            alert('خطأ أثناء إنشاء الحساب: ' + (err.message || err));
+            showStatus('');
         }
     }
 
-    function updateUI(user) {
-        document.getElementById('balanceDisplay').innerText = '$' + parseFloat(user.balance || 0).toFixed(2);
+    async function signIn() {
+        const email = document.getElementById('emailInput').value.trim();
+        const password = document.getElementById('passwordInput').value.trim();
+        if (!email || !password) { alert('الرجاء إدخال البريد الإلكتروني وكلمة المرور'); return; }
+        showStatus('جاري تسجيل الدخول...');
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            currentUser = data.user;
+            if (!currentUser) {
+                showStatus('تم تسجيل طلب تسجيل الدخول — تحقق من بريدك إذا كانت هناك خطوة تأكيد.');
+                return;
+            }
+            await ensureProfile(currentUser.id);
+            const profile = await fetchProfile(currentUser.id);
+            openApp(profile);
+        } catch (err) {
+            alert('خطأ أثناء تسجيل الدخول: ' + (err.message || err));
+            showStatus('');
+        }
+    }
 
-        if (user.last_run) {
-            let lastRunTime = new Date(user.last_run).getTime();
-            let now = new Date().getTime();
+    async function ensureProfile(uid) {
+        // Create a profiles row if it doesn't exist. Assumes table public.profiles with primary key id (uuid)
+        try {
+            const { data: existing } = await supabase.from('profiles').select('id').eq('id', uid).maybeSingle();
+            if (!existing) {
+                await supabase.from('profiles').insert([{ id: uid, balance: 0, last_run: null }]);
+            }
+        } catch (err) {
+            console.warn('ensureProfile error', err);
+        }
+    }
+
+    async function fetchProfile(uid) {
+        const { data, error } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+        if (error) throw error;
+        return data;
+    }
+
+    function openApp(profile) {
+        document.getElementById('loginCard').style.display = 'none';
+        document.getElementById('appCard').style.display = 'block';
+        document.getElementById('logoutBtn').onclick = signOut;
+        updateUI(profile);
+    }
+
+    function updateUI(profile) {
+        document.getElementById('balanceDisplay').innerText = '$' + parseFloat(profile?.balance || 0).toFixed(2);
+        if (profile?.last_run) {
+            let lastRunTime = new Date(profile.last_run).getTime();
+            let now = Date.now();
             let timePassed = now - lastRunTime;
             let hours24 = 24 * 60 * 60 * 1000;
-
             if (timePassed < hours24) {
                 document.getElementById('runBtn').disabled = true;
                 let remaining = hours24 - timePassed;
@@ -109,43 +134,60 @@
                 document.getElementById('runBtn').disabled = false;
                 document.getElementById('timerDisplay').innerText = '';
             }
+        } else {
+            document.getElementById('runBtn').disabled = false;
+            document.getElementById('timerDisplay').innerText = '';
         }
     }
 
     async function runMining() {
+        if (!currentUser || !currentUser.id) { alert('الرجاء تسجيل الدخول أولاً'); return; }
         const runBtn = document.getElementById('runBtn');
         runBtn.disabled = true;
-
         try {
-            let { data: user, error: fetchErr } = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', currentUserEmail)
-                .single();
-
-            if (fetchErr) throw fetchErr;
-
-            let currentBalance = parseFloat(user.balance || 0);
+            const profile = await fetchProfile(currentUser.id);
+            let currentBalance = parseFloat(profile?.balance || 0);
+            // If balance is zero, give a base amount instead of staying zero
+            if (currentBalance === 0) currentBalance = 1.00;
             let newBalance = currentBalance + (currentBalance * 0.03);
             let nowTime = new Date().toISOString();
-
-            let { data: updatedUser, error: updateErr } = await supabase
-                .from('users')
+            const { data: updated, error: updateErr } = await supabase
+                .from('profiles')
                 .update({ balance: newBalance, last_run: nowTime })
-                .eq('email', currentUserEmail)
+                .eq('id', currentUser.id)
                 .select()
                 .single();
-
             if (updateErr) throw updateErr;
-
-            updateUI(updatedUser);
+            updateUI(updated);
             alert('تم تشغيل التعدين بنجاح وإضافة 3% لرصيدك!');
-
         } catch (err) {
-            alert('حدث خطأ: ' + err.message);
+            alert('حدث خطأ: ' + (err.message || err));
             runBtn.disabled = false;
         }
     }
+
+    async function signOut() {
+        await supabase.auth.signOut();
+        currentUser = null;
+        document.getElementById('loginCard').style.display = 'block';
+        document.getElementById('appCard').style.display = 'none';
+        showStatus('تم تسجيل الخروج');
+    }
+
+    // On load: check session
+    (async function init() {
+        const { data } = await supabase.auth.getSession();
+        const session = data.session;
+        if (session && session.user) {
+            currentUser = session.user;
+            try {
+                await ensureProfile(currentUser.id);
+                const profile = await fetchProfile(currentUser.id);
+                openApp(profile);
+            } catch (err) { console.warn('init error', err); }
+        }
+    })();
+
 </script>
 
 </body>
