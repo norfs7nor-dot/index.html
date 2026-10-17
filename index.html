@@ -7,13 +7,14 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { font-family: system-ui, sans-serif; background-color: #0f172a; color: white; text-align: center; padding: 30px 15px; margin: 0; }
-        .card { background: #1e293b; max-width: 400px; margin: 0 auto; padding: 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .card { background: #1e293b; max-width: 420px; margin: 0 auto; padding: 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
         .balance-box { font-size: 34px; font-weight: bold; color: #22c55e; margin: 20px 0; }
         .btn { background: #2563eb; color: white; border: none; padding: 14px; font-size: 18px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
         .btn:disabled { background: #64748b; cursor: not-allowed; }
         .timer { margin-top: 15px; color: #94a3b8; font-size: 14px; }
         input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
         .status { margin-top: 10px; font-size: 14px; color: #f59e0b; }
+        .small-note { margin-top: 10px; color: #cbd5e1; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -21,8 +22,10 @@
 <div class="card" id="loginCard">
     <h2>تسجيل الدخول</h2>
     <input type="email" id="emailInput" placeholder="أدخل بريدك الإلكتروني">
+    <input type="password" id="passwordInput" placeholder="أدخل كلمة المرور">
     <button class="btn" id="loginBtn" onclick="loginUser()">دخول / تسجيل</button>
     <div class="status" id="loginStatus"></div>
+    <div class="small-note">ملاحظة: هذه نسخة تجريبية، وتحتاج إلى ربطها بـ Supabase وملء بيانات المشروع.</div>
 </div>
 
 <div class="card" id="appCard" style="display:none;">
@@ -33,31 +36,33 @@
 </div>
 
 <script>
-    // ⚠️ ضع رابط مشروعك ومفتاحك هنا
-    const SUPABASE_URL = 'sb_publishable_KdsOTT-M5gzFCdrJ5iBhfw_rkAP4098';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhkb2t3cHR4ZXZlaGFyaHFmZXN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyMzYwODIsImV4cCI6MjEwNzgxMjA4Mn0._PMZEPISAR3P_WEOulzZrTkCGva5vQL5reblUcuArfI';
+    // استبدل هاتين القيمتين ببيانات مشروعك من Supabase
+    const SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUserEmail = '';
 
     async function loginUser() {
         const emailInput = document.getElementById('emailInput').value.trim();
+        const passwordInput = document.getElementById('passwordInput').value.trim();
         const statusDiv = document.getElementById('loginStatus');
         const loginBtn = document.getElementById('loginBtn');
 
-        if (!emailInput) {
-            alert('الرجاء إدخال البريد الإلكتروني');
+        if (!emailInput || !passwordInput) {
+            alert('الرجاء إدخال البريد الإلكتروني وكلمة المرور');
             return;
         }
 
         loginBtn.disabled = true;
-        statusDiv.innerText = 'جاري الاتصال...';
+        statusDiv.innerText = 'جاري تسجيل الدخول...';
 
         try {
             let { data, error } = await supabase
                 .from('users')
                 .select('*')
                 .eq('email', emailInput)
+                .eq('password', passwordInput)
                 .maybeSingle();
 
             if (error) throw error;
@@ -65,7 +70,7 @@
             if (!data) {
                 let { data: newData, error: insertError } = await supabase
                     .from('users')
-                    .insert([{ email: emailInput, balance: 0, last_run: null }])
+                    .insert([{ email: emailInput, password: passwordInput, balance: 0, last_run: null }])
                     .select()
                     .single();
 
