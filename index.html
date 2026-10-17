@@ -1,0 +1,122 @@
+‏<!DOCTYPE html>
+‏<html lang="ar" dir="rtl">
+‏<head>
+‏    <meta charset="UTF-8">
+‏    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+‏    <title>منصة الأرباح التجريبية</title>
+‏    <!-- مكتبة Supabase للاتصال بقاعدة البيانات -->
+‏    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+‏    <style>
+‏        body { font-family: system-ui, sans-serif; background-color: #f3f4f6; text-align: center; padding: 30px 15px; margin: 0; }
+‏        .card { background: white; max-width: 400px; margin: 0 auto; padding: 25px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+‏        .balance-box { font-size: 34px; font-weight: bold; color: #16a34a; margin: 20px 0; }
+‏        .btn { background: #2563eb; color: white; border: none; padding: 14px; font-size: 18px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; }
+‏        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+‏        .timer { margin-top: 15px; color: #4b5563; font-size: 14px; }
+‏        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+‏    </style>
+‏</head>
+‏<body>
+‏
+‏<div class="card" id="loginCard">
+‏    <h2>تسجيل الدخول</h2>
+‏    <input type="email" id="emailInput" placeholder="أدخل بريدك الإلكتروني">
+‏    <button class="btn" onclick="loginUser()">دخول / تسجيل</button>
+‏</div>
+‏
+‏<div class="card" id="appCard" style="display:none;">
+‏    <h2>رصيدك التجريبي</h2>
+‏    <div class="balance-box" id="balanceDisplay">$0.00</div>
+‏    <button class="btn" id="runBtn" onclick="runMining()">تشغيل</button>
+‏    <div class="timer" id="timerDisplay"></div>
+‏</div>
+‏
+‏<script>
+‏    // ⚠️ ضع هنا رابط مشروعك ومفتاح الـ anon الذي نسخته من Supabase
+‏    const SUPABASE_URL = sb_publishable_KdsOTT-
+‏    const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIs
+‏
+‏    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+‏    
+‏    let currentUserEmail = '';
+‏
+‏    async function loginUser() {
+‏        const email = document.getElementById('emailInput').value.trim();
+‏        if (!email) {
+‏            alert('الرجاء إدخال البريد الإلكتروني');
+‏            return;
+‏        }
+‏
+‏        // البحث عن المستخدم في قاعدة البيانات
+‏        let { data, error } = await supabase
+‏            .from('users')
+‏            .select('*')
+‏            .eq('email', email)
+‏            .single();
+‏
+‏        if (error || !data) {
+‏            // إذا لم يكن موجوداً، نقوم بإنشائه برصيد 0
+‏            let { data: newData, error: insertError } = await supabase
+‏                .from('users')
+‏                .insert([{ email: email, balance: 0, last_run: null }])
+‏                .select()
+‏                .single();
+‏            
+‏            if (insertError) {
+‏                alert('حدث خطأ أثناء التسجيل');
+‏                return;
+‏            }
+‏            data = newData;
+‏        }
+‏
+‏        currentUserEmail = data.email;
+‏        document.getElementById('loginCard').style.display = 'none';
+‏        document.getElementById('appCard').style.display = 'block';
+‏        updateUI(data);
+‏    }
+‏
+‏    function updateUI(user) {
+‏        document.getElementById('balanceDisplay').innerText = '$' + parseFloat(user.balance).toFixed(2);
+‏
+‏        if (user.last_run) {
+‏            let lastRunTime = new Date(user.last_run).getTime();
+‏            let now = new Date().getTime();
+‏            let timePassed = now - lastRunTime;
+‏            let hours24 = 24 * 60 * 60 * 1000;
+‏
+‏            if (timePassed < hours24) {
+‏                document.getElementById('runBtn').disabled = true;
+‏                let remaining = hours24 - timePassed;
+‏                let hoursLeft = Math.floor(remaining / (1000 * 60 * 60));
+‏                let minutesLeft = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+‏                document.getElementById('timerDisplay').innerText = `يمكنك التشغيل مجدداً بعد: ${hoursLeft} ساعة و ${minutesLeft} دقيقة`;
+‏            } else {
+‏                document.getElementById('runBtn').disabled = false;
+‏                document.getElementById('timerDisplay').innerText = "";
+‏            }
+‏        }
+‏    }
+‏
+‏    async function runMining() {
+‏        // جلب البيانات الحالية للتأكد من الرصيد والوقت
+‏        let { data: user } = await supabase
+‏            .from('users')
+‏            .select('*')
+‏            .eq('email', currentUserEmail)
+‏            .single();
+‏
+‏        let currentBalance = parseFloat(user.balance);
+‏        let newBalance = currentBalance + (currentBalance * 0.03); // إضافة 3%
+‏        let nowTime = new Date().toISOString();
+‏
+‏        // تحديث البيانات في قاعدة البيانات
+‏        let { data: updatedUser, error } = await supabase
+‏            .from('users')
+‏            .update({ balance: newBalance, last_run: nowTime })
+‏            .eq('email', currentUserEmail)
+‏            .select()
+‏            .single();
+‏
+‏        if (!error) {
+‏            updateUI(updatedUser);
+‏   
